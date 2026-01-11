@@ -399,3 +399,23 @@ func (d *Decoder) ValidateSpec() error {
 	// Add more validation logic as needed
 	return nil
 }
+
+// ReconcileObjectMeta 导出的方法，用于为RBG模式构建ObjectMeta
+func (d *Decoder) ReconcileObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return d.reconcileObjectMeta(isvc)
+}
+
+// ReconcilePodSpec 导出的方法，用于为RBG模式构建PodSpec
+func (d *Decoder) ReconcilePodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
+	return d.reconcilePodSpec(isvc, objectMeta)
+}
+
+// ReconcileWorkerPodSpec 导出的方法，用于为RBG模式构建Worker PodSpec
+func (d *Decoder) ReconcileWorkerPodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
+	return d.reconcileWorkerPodSpec(isvc, objectMeta)
+}
+
+// GetWorkerSize 导出的方法，用于获取Worker数量
+func (d *Decoder) GetWorkerSize() int {
+	return d.getWorkerSize()
+}

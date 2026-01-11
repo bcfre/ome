@@ -394,3 +394,23 @@ func (e *Engine) ValidateSpec() error {
 	// Add more validation logic as needed
 	return nil
 }
+
+// ReconcileObjectMeta 导出的方法，用于为RBG模式构建ObjectMeta
+func (e *Engine) ReconcileObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return e.reconcileObjectMeta(isvc)
+}
+
+// ReconcilePodSpec 导出的方法，用于为RBG模式构建PodSpec
+func (e *Engine) ReconcilePodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
+	return e.reconcilePodSpec(isvc, objectMeta)
+}
+
+// ReconcileWorkerPodSpec 导出的方法，用于为RBG模式构建Worker PodSpec
+func (e *Engine) ReconcileWorkerPodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
+	return e.reconcileWorkerPodSpec(isvc, objectMeta)
+}
+
+// GetWorkerSize 导出的方法，用于获取Worker数量
+func (e *Engine) GetWorkerSize() int {
+	return e.getWorkerSize()
+}

@@ -288,3 +288,13 @@ func (r *Router) ValidateSpec() error {
 	// Add more validation logic as needed
 	return nil
 }
+
+// ReconcileObjectMeta 导出的方法，用于为RBG模式构建ObjectMeta
+func (r *Router) ReconcileObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return r.reconcileObjectMeta(isvc)
+}
+
+// ReconcilePodSpec 导出的方法，用于为RBG模式构建PodSpec
+func (r *Router) ReconcilePodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
+	return r.reconcilePodSpec(isvc, objectMeta)
+}

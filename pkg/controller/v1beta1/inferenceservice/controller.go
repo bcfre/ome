@@ -43,6 +43,7 @@ import (
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/external_service"
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/ingress"
 	multimodelconfig "github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/modelconfig"
+	rbgpkg "github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/rbg"
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/status"
 	isvcutils "github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/utils"
 	"github.com/sgl-project/ome/pkg/runtimeselector"
@@ -299,8 +300,14 @@ func (r *InferenceServiceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Step 5: Create reconcilers based on merged specs
 	// If RBG mode is enabled, use RBG reconciler instead of individual component reconcilers
 	if useRBGMode {
-		// Import rbg package at the top if not already imported
-		// For RBG mode, we need to collect all component configs and pass them to RBG reconciler
+		// 验证RBG模式仅支持RawDeployment和MultiNode
+		if engineDeploymentMode != constants.RawDeployment && engineDeploymentMode != constants.MultiNode {
+			err := fmt.Errorf("RBG mode only supports RawDeployment and MultiNode deployment modes, got %s for engine", engineDeploymentMode)
+			r.Log.Error(err, "Invalid deployment mode for RBG")
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "InvalidDeploymentMode", err.Error())
+			return reconcile.Result{}, err
+		}
+
 		r.Log.Info("Using RoleBasedGroup deployment mode",
 			"namespace", isvc.Namespace,
 			"inferenceService", isvc.Name,
@@ -308,16 +315,31 @@ func (r *InferenceServiceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			"hasDecoder", mergedDecoder != nil,
 			"hasRouter", mergedRouter != nil)
 
-		// TODO: Collect component configurations and call RBG reconciler
-		// This requires:
-		// 1. Building ComponentConfig for each merged component
-		// 2. Creating a DeploymentReconciler instance
-		// 3. Calling ReconcileRoleBasedGroupDeployment
-		// For MVP, we log a warning and fall back to standard reconciliation
-		r.Log.Info("RBG mode detected but full integration not yet complete, using standard reconciliation",
+		// 调用RBG模式的调谐逻辑
+		if result, err := r.reconcileRBGMode(ctx, isvc, baseModel, baseModelMeta, rt, rtName,
+			mergedEngine, mergedDecoder, mergedRouter,
+			engineDeploymentMode, decoderDeploymentMode, routerDeploymentMode,
+			componentBuilderFactory, userSpecifiedRuntime); err != nil {
+			return result, err
+		}
+
+		// RBG模式下，跳过标准组件调谐流程
+		// 但仍需设置ingressDeploymentMode供后续Ingress调谐使用
+		if mergedRouter != nil {
+			ingressDeploymentMode = routerDeploymentMode
+		} else if mergedDecoder != nil {
+			ingressDeploymentMode = decoderDeploymentMode
+		} else {
+			ingressDeploymentMode = engineDeploymentMode
+		}
+
+		r.Log.Info("Determined ingress deployment mode for RBG",
+			"ingressDeploymentMode", ingressDeploymentMode,
 			"namespace", isvc.Namespace,
 			"inferenceService", isvc.Name)
-		// Fall through to standard reconciliation for now
+
+		// 跳过标准组件调谐，直接跳转到Ingress调谐
+		goto IngressReconciliation
 	}
 
 	// Standard component reconciliation
@@ -425,6 +447,7 @@ func (r *InferenceServiceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
+IngressReconciliation:
 	// Now reconcile ingress and external service after components have created their services
 	ingressConfig, err := controllerconfig.NewIngressConfig(r.Clientset)
 	if err != nil {
@@ -779,4 +802,172 @@ func (r *InferenceServiceReconciler) setExternalServiceURL(ctx context.Context, 
 // migratePredictorToNewArchitecture delegates to the migration utility
 func (r *InferenceServiceReconciler) migratePredictorToNewArchitecture(isvc *v1beta1.InferenceService) error {
 	return isvcutils.MigratePredictorToNewArchitecture(context.Background(), r.Client, r.Log, isvc)
+}
+
+// reconcileRBGMode 处理RBG模式的调谐逻辑
+func (r *InferenceServiceReconciler) reconcileRBGMode(
+	ctx context.Context,
+	isvc *v1beta1.InferenceService,
+	baseModel *v1beta1.BaseModelSpec,
+	baseModelMeta *metav1.ObjectMeta,
+	rt *v1beta1.ServingRuntimeSpec,
+	rtName string,
+	mergedEngine *v1beta1.EngineSpec,
+	mergedDecoder *v1beta1.DecoderSpec,
+	mergedRouter *v1beta1.RouterSpec,
+	engineDeploymentMode constants.DeploymentModeType,
+	decoderDeploymentMode constants.DeploymentModeType,
+	routerDeploymentMode constants.DeploymentModeType,
+	componentBuilderFactory *components.ComponentBuilderFactory,
+	userSpecifiedRuntime bool,
+) (ctrl.Result, error) {
+	r.Log.Info("Reconciling RBG mode",
+		"namespace", isvc.Namespace,
+		"inferenceService", isvc.Name)
+
+	// 收集ComponentConfig
+	componentConfigs := make(map[v1beta1.ComponentType]*rbgpkg.ComponentConfig)
+
+	// 构建Engine ComponentConfig
+	if mergedEngine != nil {
+		engineAC, engineAcName, err := r.AcceleratorClassSelector.GetAcceleratorClass(ctx, isvc, rt, v1beta1.EngineComponent)
+		if err != nil {
+			r.Log.Error(err, "Failed to get accelerator class for engine component", "Name", isvc.Name)
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "AcceleratorClassError", "Failed to get accelerator class for engine: %v", err)
+			return reconcile.Result{}, err
+		}
+		engineSupportedModelFormats := r.RuntimeSelector.GetSupportedModelFormat(ctx, rt, baseModel, userSpecifiedRuntime)
+
+		engineReconciler := componentBuilderFactory.CreateEngineComponent(
+			engineDeploymentMode,
+			baseModel,
+			baseModelMeta,
+			mergedEngine,
+			rt,
+			rtName,
+			engineSupportedModelFormats,
+			engineAC,
+			engineAcName,
+		)
+
+		// 类型断言为Engine组件
+		engineComponent, ok := engineReconciler.(*components.Engine)
+		if !ok {
+			return reconcile.Result{}, fmt.Errorf("failed to cast engine reconciler to Engine type")
+		}
+
+		// 构建Engine ComponentConfig
+		engineConfig, err := buildEngineComponentConfig(ctx, engineComponent, isvc, engineDeploymentMode)
+		if err != nil {
+			r.Log.Error(err, "Failed to build engine component config")
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "ComponentConfigError", "Failed to build engine config: %v", err)
+			return reconcile.Result{}, err
+		}
+		componentConfigs[v1beta1.EngineComponent] = engineConfig
+	}
+
+	// 构建Decoder ComponentConfig
+	if mergedDecoder != nil {
+		decoderAC, decoderAcName, err := r.AcceleratorClassSelector.GetAcceleratorClass(ctx, isvc, rt, v1beta1.DecoderComponent)
+		if err != nil {
+			r.Log.Error(err, "Failed to get accelerator class for decoder component", "Name", isvc.Name)
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "AcceleratorClassError", "Failed to get accelerator class for decoder: %v", err)
+			return reconcile.Result{}, err
+		}
+		decoderSupportedModelFormats := r.RuntimeSelector.GetSupportedModelFormat(ctx, rt, baseModel, userSpecifiedRuntime)
+
+		decoderReconciler := componentBuilderFactory.CreateDecoderComponent(
+			decoderDeploymentMode,
+			baseModel,
+			baseModelMeta,
+			mergedDecoder,
+			rt,
+			rtName,
+			decoderSupportedModelFormats,
+			decoderAC,
+			decoderAcName,
+		)
+
+		// 类型断言为Decoder组件
+		decoderComponent, ok := decoderReconciler.(*components.Decoder)
+		if !ok {
+			return reconcile.Result{}, fmt.Errorf("failed to cast decoder reconciler to Decoder type")
+		}
+
+		// 构建Decoder ComponentConfig
+		decoderConfig, err := buildDecoderComponentConfig(ctx, decoderComponent, isvc, decoderDeploymentMode)
+		if err != nil {
+			r.Log.Error(err, "Failed to build decoder component config")
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "ComponentConfigError", "Failed to build decoder config: %v", err)
+			return reconcile.Result{}, err
+		}
+		componentConfigs[v1beta1.DecoderComponent] = decoderConfig
+	}
+
+	// 构建Router ComponentConfig
+	if mergedRouter != nil {
+		routerReconciler := componentBuilderFactory.CreateRouterComponent(
+			routerDeploymentMode,
+			baseModel,
+			baseModelMeta,
+			mergedRouter,
+			rt,
+			rtName,
+		)
+
+		// 类型断言为Router组件
+		routerComponent, ok := routerReconciler.(*components.Router)
+		if !ok {
+			return reconcile.Result{}, fmt.Errorf("failed to cast router reconciler to Router type")
+		}
+
+		// 构建Router ComponentConfig
+		routerConfig, err := buildRouterComponentConfig(ctx, routerComponent, isvc, routerDeploymentMode)
+		if err != nil {
+			r.Log.Error(err, "Failed to build router component config")
+			r.Recorder.Eventf(isvc, v1.EventTypeWarning, "ComponentConfigError", "Failed to build router config: %v", err)
+			return reconcile.Result{}, err
+		}
+		componentConfigs[v1beta1.RouterComponent] = routerConfig
+	}
+
+	// 创建RBG Reconciler
+	rbgReconciler := rbgpkg.NewRBGReconciler(r.Client, r.Scheme)
+
+	// 调谐RBG资源
+	rbgResult, err := rbgReconciler.Reconcile(ctx, isvc, componentConfigs)
+	if err != nil {
+		r.Log.Error(err, "Failed to reconcile RBG")
+		r.Recorder.Eventf(isvc, v1.EventTypeWarning, "RBGReconcileError", "Failed to reconcile RBG: %v", err)
+		return reconcile.Result{}, err
+	}
+
+	// 获取RBG状态
+	rbgStatus, err := rbgReconciler.GetStatus(ctx, isvc.Namespace, isvc.Name)
+	if err != nil {
+		r.Log.Error(err, "Failed to get RBG status")
+		return reconcile.Result{}, err
+	}
+
+	// 构建componentList
+	componentList := []v1beta1.ComponentType{}
+	if mergedEngine != nil {
+		componentList = append(componentList, v1beta1.EngineComponent)
+	}
+	if mergedDecoder != nil {
+		componentList = append(componentList, v1beta1.DecoderComponent)
+	}
+	if mergedRouter != nil {
+		componentList = append(componentList, v1beta1.RouterComponent)
+	}
+
+	// 传播RBG状态到InferenceService
+	propagateRBGStatusToInferenceService(isvc, rbgStatus, componentList)
+
+	r.Log.Info("RBG reconciliation completed",
+		"namespace", isvc.Namespace,
+		"inferenceService", isvc.Name,
+		"rbgReady", rbgResult.Ready)
+
+	return ctrl.Result{}, nil
 }
