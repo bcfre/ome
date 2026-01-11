@@ -1,6 +1,8 @@
 package common
 
 import (
+	"context"
+
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
@@ -16,6 +18,7 @@ import (
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/multinode"
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/multinodevllm"
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/raw"
+	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/reconcilers/rbg"
 	"github.com/sgl-project/ome/pkg/controller/v1beta1/inferenceservice/status"
 )
 
@@ -180,4 +183,46 @@ func (r *DeploymentReconciler) setMultiNodeRayVLLMReferences(isvc *v1beta1.Infer
 		}
 	}
 	return controllerutil.SetControllerReference(isvc, reconciler.RawMultiNodeService.Service, r.Scheme)
+}
+
+// ReconcileRoleBasedGroupDeployment handles RBG deployment mode
+func (r *DeploymentReconciler) ReconcileRoleBasedGroupDeployment(
+	ctx context.Context,
+	isvc *v1beta1.InferenceService,
+	components map[v1beta1.ComponentType]*rbg.ComponentConfig,
+) (ctrl.Result, error) {
+	r.Log.Info("Reconciling RoleBasedGroup deployment", "inferenceService", isvc.Name)
+
+	// 创建RBG Reconciler
+	rbgReconciler := rbg.NewRBGReconciler(r.Client, r.Scheme)
+
+	// 协调RBG资源
+	rbgResult, err := rbgReconciler.Reconcile(ctx, isvc, components)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "failed to reconcile RBG")
+	}
+
+	// 获取RBG状态
+	rbgStatus, err := rbgReconciler.GetStatus(ctx, isvc.Namespace, isvc.Name)
+	if err != nil {
+		r.Log.Error(err, "Failed to get RBG status")
+		// 即使无法获取状态也继续,避免阻塞
+		rbgStatus = &rbg.RBGStatus{
+			RoleStatuses: make(map[v1beta1.ComponentType]*rbg.RoleStatus),
+		}
+	}
+
+	// 为每个Component传播状态到InferenceService
+	for componentType, roleStatus := range rbgStatus.RoleStatuses {
+		r.StatusManager.PropagateRBGStatus(
+			&isvc.Status,
+			componentType,
+			rbgResult.Ready,
+			roleStatus.Replicas,
+			roleStatus.ReadyReplicas,
+			rbgResult.URL, // TODO: 实现Service URL获取逻辑
+		)
+	}
+
+	return ctrl.Result{}, nil
 }

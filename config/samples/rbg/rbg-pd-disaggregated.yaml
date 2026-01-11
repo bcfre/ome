@@ -1,0 +1,36 @@
+# Example: PD-disaggregated with MultiNode Engine + RawDeployment Decoder using RBG
+apiVersion: ome.io/v1beta1
+kind: InferenceService
+metadata:
+  name: pd-rbg-disaggregated
+  annotations:
+    # Enable RoleBasedGroup deployment mode via annotation
+    ome.io/deploymentMode: "RoleBasedGroup"
+spec:
+  model:
+    name: deepseek-v3
+  engine:
+    minReplicas: 1
+    # MultiNode configuration for engine
+    leader:
+      runner:
+        image: vllm/vllm-openai:latest
+        args: ["--role=prefill"]
+        resources:
+          requests:
+            nvidia.com/gpu: 4
+    worker:
+      size: 7
+      runner:
+        resources:
+          requests:
+            nvidia.com/gpu: 4
+  decoder:
+    minReplicas: 2
+    # RawDeployment configuration for decoder
+    runner:
+      image: vllm/vllm-openai:latest
+      args: ["--role=decode"]
+      resources:
+        requests:
+          nvidia.com/gpu: 2

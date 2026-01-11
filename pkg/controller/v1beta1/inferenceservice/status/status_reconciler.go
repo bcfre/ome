@@ -81,6 +81,58 @@ func (sr *StatusReconciler) PropagateMultiNodeStatus(
 	status.ObservedGeneration = lws.Generation
 }
 
+// PropagateRBGStatus propagates status from RBG for a specific component
+func (sr *StatusReconciler) PropagateRBGStatus(
+	status *v1beta1.InferenceServiceStatus,
+	component v1beta1.ComponentType,
+	rbgReady bool,
+	roleReplicas int32,
+	readyReplicas int32,
+	url *apis.URL) {
+
+	statusSpec := sr.initializeComponentStatus(status, component)
+
+	// Set revision from annotations (will be set by RBG reconciler)
+	// For now, use a placeholder revision
+	statusSpec.LatestCreatedRevision = "1"
+
+	// Set URL if RBG role is ready
+	if rbgReady && readyReplicas == roleReplicas && roleReplicas > 0 {
+		statusSpec.URL = url
+	}
+
+	readyCondition := sr.getReadyConditionsMap()[component]
+
+	// Create condition based on RBG role status
+	var componentCondition *apis.Condition
+	if readyReplicas == roleReplicas && roleReplicas > 0 {
+		componentCondition = &apis.Condition{
+			Type:    readyCondition,
+			Status:  v1.ConditionTrue,
+			Reason:  "RBGRoleReady",
+			Message: "RBG role is ready",
+		}
+	} else if roleReplicas == 0 {
+		componentCondition = &apis.Condition{
+			Type:    readyCondition,
+			Status:  v1.ConditionUnknown,
+			Reason:  "RBGRoleNoReplicas",
+			Message: "RBG role has no replicas",
+		}
+	} else {
+		componentCondition = &apis.Condition{
+			Type:    readyCondition,
+			Status:  v1.ConditionFalse,
+			Reason:  "RBGRoleNotReady",
+			Message: "RBG role is not ready",
+		}
+	}
+
+	sr.setCondition(status, readyCondition, componentCondition)
+	status.Components[component] = statusSpec
+	// Note: ObservedGeneration will be set from RBG resource metadata
+}
+
 // PropagateMultiNodeRayVLLMStatus propagates status from multiple deployments
 func (sr *StatusReconciler) PropagateMultiNodeRayVLLMStatus(
 	status *v1beta1.InferenceServiceStatus,

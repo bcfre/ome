@@ -1,0 +1,26 @@
+# Example: Engine + Router with RBG deployment
+apiVersion: ome.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-rbg-with-router
+  annotations:
+    # Enable RoleBasedGroup deployment mode via annotation
+    ome.io/deploymentMode: "RoleBasedGroup"
+spec:
+  model:
+    name: llama-3-8b
+  engine:
+    minReplicas: 2
+    runner:
+      image: vllm/vllm-openai:latest
+      resources:
+        requests:
+          nvidia.com/gpu: 1
+  router:
+    minReplicas: 1
+    runner:
+      image: ome/router:latest
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"

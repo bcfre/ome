@@ -1,0 +1,19 @@
+# Example: Single Engine with RBG deployment using RawDeployment workload
+apiVersion: ome.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-rbg-single
+  annotations:
+    # Enable RoleBasedGroup deployment mode via annotation
+    ome.io/deploymentMode: "RoleBasedGroup"
+spec:
+  model:
+    name: llama-3-8b
+  engine:
+    minReplicas: 2
+    maxReplicas: 5
+    runner:
+      image: vllm/vllm-openai:latest
+      resources:
+        requests:
+          nvidia.com/gpu: 1

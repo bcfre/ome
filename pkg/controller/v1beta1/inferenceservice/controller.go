@@ -8,6 +8,7 @@ import (
 
 	policyv1 "k8s.io/api/policy/v1"
 
+	rbg "github.com/bcfre/rbg-api/api/workloads/v1alpha1"
 	"github.com/go-logr/logr"
 	kedav1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	"github.com/pkg/errors"
@@ -90,6 +91,9 @@ import (
 // +kubebuilder:rbac:groups=leaderworkerset.x-k8s.io,resources=leaderworkersets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=leaderworkerset.x-k8s.io,resources=leaderworkersets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=leaderworkerset.x-k8s.io,resources=leaderworkersets/finalizers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=workloads.x-k8s.io,resources=rolebasedgroups,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=workloads.x-k8s.io,resources=rolebasedgroups/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=workloads.x-k8s.io,resources=rolebasedgroups/finalizers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
 // InferenceServiceState describes the Readiness of the InferenceService
@@ -281,7 +285,42 @@ func (r *InferenceServiceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		r.Log.Info("PD-disaggregated deployment detected", "namespace", isvc.Namespace, "inferenceService", isvc.Name)
 	}
 
+	// Step 4.5: Check if RoleBasedGroup mode is explicitly specified via annotation
+	useRBGMode := false
+	if mode, found := isvcutils.GetDeploymentModeFromAnnotations(isvc.Annotations); found {
+		if mode == constants.RoleBasedGroup {
+			useRBGMode = true
+			r.Log.Info("RoleBasedGroup deployment mode detected via annotation",
+				"namespace", isvc.Namespace,
+				"inferenceService", isvc.Name)
+		}
+	}
+
 	// Step 5: Create reconcilers based on merged specs
+	// If RBG mode is enabled, use RBG reconciler instead of individual component reconcilers
+	if useRBGMode {
+		// Import rbg package at the top if not already imported
+		// For RBG mode, we need to collect all component configs and pass them to RBG reconciler
+		r.Log.Info("Using RoleBasedGroup deployment mode",
+			"namespace", isvc.Namespace,
+			"inferenceService", isvc.Name,
+			"hasEngine", mergedEngine != nil,
+			"hasDecoder", mergedDecoder != nil,
+			"hasRouter", mergedRouter != nil)
+
+		// TODO: Collect component configurations and call RBG reconciler
+		// This requires:
+		// 1. Building ComponentConfig for each merged component
+		// 2. Creating a DeploymentReconciler instance
+		// 3. Calling ReconcileRoleBasedGroupDeployment
+		// For MVP, we log a warning and fall back to standard reconciliation
+		r.Log.Info("RBG mode detected but full integration not yet complete, using standard reconciliation",
+			"namespace", isvc.Namespace,
+			"inferenceService", isvc.Name)
+		// Fall through to standard reconciliation for now
+	}
+
+	// Standard component reconciliation
 	if mergedEngine != nil {
 		engineAC, engineAcName, err := r.AcceleratorClassSelector.GetAcceleratorClass(ctx, isvc, rt, v1beta1.EngineComponent)
 		if err != nil {
@@ -635,6 +674,12 @@ func (r *InferenceServiceReconciler) SetupWithManager(mgr ctrl.Manager, deployCo
 		return err
 	}
 
+	// 检查RBG CRD是否可用
+	rbgFound, err := utils.IsCrdAvailable(r.ClientConfig, rbg.SchemeGroupVersion.String(), "RoleBasedGroup")
+	if err != nil {
+		return err
+	}
+
 	kedaFound, err := utils.IsCrdAvailable(r.ClientConfig, kedav1.SchemeGroupVersion.String(), constants.KEDAScaledObjectKind)
 	if err != nil {
 		return err
@@ -672,6 +717,12 @@ func (r *InferenceServiceReconciler) SetupWithManager(mgr ctrl.Manager, deployCo
 		ctrlBuilder = ctrlBuilder.Owns(&lws.LeaderWorkerSet{})
 	} else {
 		r.Log.Info("The InferenceService controller won't watch leaderworkerset.x-k8s.io/v1/LeaderWorkerSet resources because the CRD is not available.")
+	}
+
+	if rbgFound {
+		ctrlBuilder = ctrlBuilder.Owns(&rbg.RoleBasedGroup{})
+	} else {
+		r.Log.Info("The InferenceService controller won't watch RoleBasedGroup resources because the CRD is not available.")
 	}
 
 	if vsFound && !ingressConfig.DisableIstioVirtualHost {
