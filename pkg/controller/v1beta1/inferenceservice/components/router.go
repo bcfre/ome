@@ -298,3 +298,42 @@ func (r *Router) ReconcileObjectMeta(isvc *v1beta1.InferenceService) (metav1.Obj
 func (r *Router) ReconcilePodSpec(isvc *v1beta1.InferenceService, objectMeta *metav1.ObjectMeta) (*v1.PodSpec, error) {
 	return r.reconcilePodSpec(isvc, objectMeta)
 }
+
+// ============ ComponentConfigExtractor Interface Implementation ============
+
+// GetPodSpec implements ComponentConfigExtractor interface
+// Returns the main PodSpec for the Router component
+func (r *Router) GetPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	objectMeta, err := r.reconcileObjectMeta(isvc)
+	if err != nil {
+		return nil, err
+	}
+	return r.reconcilePodSpec(isvc, &objectMeta)
+}
+
+// GetWorkerPodSpec implements ComponentConfigExtractor interface
+// Router does not support worker pods, always returns nil
+func (r *Router) GetWorkerPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	return nil, nil
+}
+
+// GetObjectMeta implements ComponentConfigExtractor interface
+// Returns the ObjectMeta (name, labels, annotations) for the Router component
+func (r *Router) GetObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return r.reconcileObjectMeta(isvc)
+}
+
+// GetComponentExtension implements ComponentConfigExtractor interface
+// Returns the component extension configuration
+func (r *Router) GetComponentExtension() *v1beta1.ComponentExtensionSpec {
+	if r.routerSpec == nil {
+		return nil
+	}
+	return &r.routerSpec.ComponentExtensionSpec
+}
+
+// GetWorkerSize implements ComponentConfigExtractor interface
+// Router does not support workers, always returns 0
+func (r *Router) GetWorkerSize() int {
+	return 0
+}

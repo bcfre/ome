@@ -414,3 +414,40 @@ func (e *Engine) ReconcileWorkerPodSpec(isvc *v1beta1.InferenceService, objectMe
 func (e *Engine) GetWorkerSize() int {
 	return e.getWorkerSize()
 }
+
+// ============ ComponentConfigExtractor Interface Implementation ============
+
+// GetPodSpec implements ComponentConfigExtractor interface
+// Returns the main PodSpec for the Engine component
+func (e *Engine) GetPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	objectMeta, err := e.reconcileObjectMeta(isvc)
+	if err != nil {
+		return nil, err
+	}
+	return e.reconcilePodSpec(isvc, &objectMeta)
+}
+
+// GetWorkerPodSpec implements ComponentConfigExtractor interface
+// Returns the Worker PodSpec for MultiNode deployments
+func (e *Engine) GetWorkerPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	objectMeta, err := e.reconcileObjectMeta(isvc)
+	if err != nil {
+		return nil, err
+	}
+	return e.reconcileWorkerPodSpec(isvc, &objectMeta)
+}
+
+// GetObjectMeta implements ComponentConfigExtractor interface
+// Returns the ObjectMeta (name, labels, annotations) for the Engine component
+func (e *Engine) GetObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return e.reconcileObjectMeta(isvc)
+}
+
+// GetComponentExtension implements ComponentConfigExtractor interface
+// Returns the component extension configuration
+func (e *Engine) GetComponentExtension() *v1beta1.ComponentExtensionSpec {
+	if e.engineSpec == nil {
+		return nil
+	}
+	return &e.engineSpec.ComponentExtensionSpec
+}

@@ -1,6 +1,7 @@
 package components
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -26,6 +27,27 @@ type ComponentConfig interface {
 
 	// ValidateSpec validates the component spec
 	ValidateSpec() error
+}
+
+// ComponentConfigExtractor defines methods for extracting configuration from components
+// This is used by workload strategies (e.g., RBGStrategy) to obtain component configurations
+type ComponentConfigExtractor interface {
+	// GetPodSpec returns the main PodSpec for this component
+	GetPodSpec(isvc *v1beta1.InferenceService) (*corev1.PodSpec, error)
+
+	// GetWorkerPodSpec returns the Worker PodSpec for MultiNode deployments
+	// Returns nil for components that don't support worker pods
+	GetWorkerPodSpec(isvc *v1beta1.InferenceService) (*corev1.PodSpec, error)
+
+	// GetObjectMeta returns the ObjectMeta (name, labels, annotations) for this component
+	GetObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error)
+
+	// GetComponentExtension returns the component extension configuration
+	GetComponentExtension() *v1beta1.ComponentExtensionSpec
+
+	// GetWorkerSize returns the worker size for MultiNode deployments
+	// Returns 0 for components that don't support workers
+	GetWorkerSize() int
 }
 
 // PodSpecProvider defines the interface for providing pod specifications
