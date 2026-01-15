@@ -1,0 +1,119 @@
+# apiVersion: ome.io/v1beta1
+# kind: InferenceService
+# metadata:
+#   name: qwen3-0-6b
+#   # namespace: qwen3-0-6b
+#   annotations:
+#     ome.io/deploymentMode: "RoleBasedGroup"
+# spec:
+#   model:
+#     name: qwen3-0-6b
+#   runtime:
+#     name: srt-qwen3-0-6b
+#   # router:
+#   #   minReplicas: 1
+#   #   maxReplicas: 1
+#   engine:
+#     minReplicas: 1
+#     maxReplicas: 1
+---
+# apiVersion: ome.io/v1beta1
+# kind: InferenceService
+# metadata:
+#   name: qwen3-0-6b-pd
+#   annotations:
+#     ome.io/deploymentMode: "RoleBasedGroup"
+# spec:
+#   model:
+#     name: qwen3-0-6b
+#   runtime:
+#     name: srt-qwen3-0-6b-pd
+#   # router:
+#   #   minReplicas: 2
+#   #   maxReplicas: 2
+#   engine:
+#     minReplicas: 2
+#     maxReplicas: 2
+#     runner:
+#       name: ome-container
+#       # image: docker.io/lmsysorg/sglang:v0.5.4.post3-cu129-amd64
+#       # image: docker.io/lmsysorg/sglang:v0.5.5.post3-cu129-amd64
+#       # image: nginx:latest
+#       env:
+#       - name: test
+#         value: test
+#       # command:
+#       # - sh
+#       # - -c
+#       # - "sleep infinity"
+#   decoder:
+#     minReplicas: 2
+#     maxReplicas: 2
+#     runner:
+#       name: ome-container
+#       # image: docker.io/lmsysorg/sglang:v0.5.4.post3-cu129-amd64
+#       image: nginx:latest-not-exist
+#       # command:
+#       # - sh
+#       # - -c
+#       # - "sleep infinity"
+---
+apiVersion: ome.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen3-0-6b-pd
+  annotations:
+    ome.io/deploymentMode: "RoleBasedGroup"
+spec:
+  model:
+    name: qwen3-0-6b
+  runtime:
+    name: srt-qwen3-0-6b-pd
+  # router:
+  #   minReplicas: 2
+  #   maxReplicas: 2
+  engine:
+    minReplicas: 2
+    maxReplicas: 2
+    # runner:
+    #   name: ome-container
+    #   image: docker.io/lmsysorg/sglang:v0.5.4.post3-cu129-amd64
+      # image: docker.io/lmsysorg/sglang:v0.5.5.post3-cu129-amd64
+      # image: nginx:latest
+      # command:
+      # - sh
+      # - -c
+      # - "sleep infinity"
+  decoder:
+    minReplicas: 2
+    maxReplicas: 2
+    # runner:
+    #   name: ome-container
+      # image: docker.io/lmsysorg/sglang:v0.5.4.post3-cu129-amd64
+    #   image: nginx:latest
+    #   command:
+    #   - sh
+    #   - -c
+    #   - "sleep infinity"
+---
+# apiVersion: ome.io/v1beta1
+# kind: InferenceService
+# metadata:
+#   name: qwen3-0-6b-mn-pd
+#   # namespace: qwen3-0-6b
+#   annotations:
+#     ome.io/deploymentMode: "RoleBasedGroup"
+# spec:
+#   model:
+#     name: qwen3-0-6b
+#   runtime:
+#     name: srt-qwen3-0-6b-mn-pd
+#   router:
+#     minReplicas: 1
+#     maxReplicas: 1
+#   engine:
+#     minReplicas: 1
+#     maxReplicas: 1
+#   decoder:
+#     minReplicas: 1
+#     maxReplicas: 1

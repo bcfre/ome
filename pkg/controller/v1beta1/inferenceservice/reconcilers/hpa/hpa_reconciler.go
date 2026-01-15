@@ -49,18 +49,17 @@ func createHPA(componentMeta metav1.ObjectMeta,
 	maxReplicas := calculateMaxReplicas(componentExt, minReplicas)
 	metrics := getHPAMetrics(componentMeta, componentExt)
 
+	// 根据部署模式确定ScaleTargetRef
+	scaleTargetRef := getScaleTargetRef(componentMeta)
+
 	return &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: componentMeta,
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-				APIVersion: "apps/v1",
-				Kind:       "Deployment",
-				Name:       componentMeta.Name,
-			},
-			MinReplicas: &minReplicas,
-			MaxReplicas: maxReplicas,
-			Metrics:     metrics,
-			Behavior:    &autoscalingv2.HorizontalPodAutoscalerBehavior{},
+			ScaleTargetRef: scaleTargetRef,
+			MinReplicas:    &minReplicas,
+			MaxReplicas:    maxReplicas,
+			Metrics:        metrics,
+			Behavior:       &autoscalingv2.HorizontalPodAutoscalerBehavior{},
 		},
 	}
 }
@@ -70,6 +69,30 @@ func calculateMinReplicas(componentExt *v1beta1.ComponentExtensionSpec) int32 {
 		return int32(constants.DefaultMinReplicas)
 	}
 	return int32(*componentExt.MinReplicas)
+}
+
+// getScaleTargetRef 根据部署模式返回HPA的ScaleTargetRef
+// 如果是RoleBasedGroup模式，返回RoleBasedGroupScalingAdapter
+// 否则返回默认的Deployment
+func getScaleTargetRef(componentMeta metav1.ObjectMeta) autoscalingv2.CrossVersionObjectReference {
+	// 检查是否为RoleBasedGroup部署模式
+	if deploymentMode, exists := componentMeta.Annotations[constants.DeploymentMode]; exists {
+		if deploymentMode == string(constants.RoleBasedGroup) {
+			// RoleBasedGroup模式使用RoleBasedGroupScalingAdapter
+			return autoscalingv2.CrossVersionObjectReference{
+				APIVersion: "workloads.x-k8s.io/v1alpha1",
+				Kind:       "RoleBasedGroupScalingAdapter",
+				Name:       componentMeta.Name,
+			}
+		}
+	}
+
+	// 默认使用Deployment
+	return autoscalingv2.CrossVersionObjectReference{
+		APIVersion: "apps/v1",
+		Kind:       "Deployment",
+		Name:       componentMeta.Name,
+	}
 }
 
 func calculateMaxReplicas(componentExt *v1beta1.ComponentExtensionSpec, minReplicas int32) int32 {
