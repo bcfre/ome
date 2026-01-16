@@ -86,6 +86,24 @@ func TestCreateHPA(t *testing.T) {
 				ScaleMetric: &memoryResource,
 			},
 		},
+		"rbgdeploymenthpa": {
+			objectMeta: metav1.ObjectMeta{
+				Name:      "rbg-engine",
+				Namespace: "rbg-namespace",
+				Annotations: map[string]string{
+					constants.DeploymentMode: string(constants.RoleBasedGroup),
+				},
+				Labels: map[string]string{
+					"component": "engine",
+				},
+			},
+			componentExt: &v1beta1.ComponentExtensionSpec{
+				MinReplicas: isvc.GetIntReference(2),
+				MaxReplicas: 8,
+				ScaleTarget: isvc.GetIntReference(70),
+				ScaleMetric: &cpuResource,
+			},
+		},
 	}
 
 	defaultminreplicas := int32(1)
@@ -94,6 +112,8 @@ func TestCreateHPA(t *testing.T) {
 	igutilization := int32(30)
 	predictorminreplicas := int32(5)
 	predictorutilization := int32(50)
+	rbgminreplicas := int32(2)
+	rbgutilization := int32(70)
 
 	expectedHPASpecs := map[string]*autoscalingv2.HorizontalPodAutoscaler{
 		"igdefaulthpa": {
@@ -194,6 +214,31 @@ func TestCreateHPA(t *testing.T) {
 				Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{},
 			},
 		},
+		"rbgdeploymenthpa": {
+			ObjectMeta: testInput["rbgdeploymenthpa"].objectMeta,
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+					APIVersion: "workloads.x-k8s.io/v1alpha1",
+					Kind:       "RoleBasedGroupScalingAdapter",
+					Name:       testInput["rbgdeploymenthpa"].objectMeta.Name,
+				},
+				MinReplicas: &rbgminreplicas,
+				MaxReplicas: 8,
+				Metrics: []autoscalingv2.MetricSpec{
+					{
+						Type: autoscalingv2.ResourceMetricSourceType,
+						Resource: &autoscalingv2.ResourceMetricSource{
+							Name: v1.ResourceName("cpu"),
+							Target: autoscalingv2.MetricTarget{
+								Type:               "Utilization",
+								AverageUtilization: &rbgutilization,
+							},
+						},
+					},
+				},
+				Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{},
+			},
+		},
 	}
 
 	tests := []struct {
@@ -240,6 +285,14 @@ func TestCreateHPA(t *testing.T) {
 				componentExt: testInput["invalidinputhpa"].componentExt,
 			},
 			expected: expectedHPASpecs["predictordefaulthpa"],
+		},
+		{
+			name: "rbg deployment mode hpa",
+			args: args{
+				objectMeta:   testInput["rbgdeploymenthpa"].objectMeta,
+				componentExt: testInput["rbgdeploymenthpa"].componentExt,
+			},
+			expected: expectedHPASpecs["rbgdeploymenthpa"],
 		},
 	}
 	for _, tt := range tests {

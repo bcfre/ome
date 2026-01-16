@@ -2,7 +2,9 @@ package status
 
 import (
 	"reflect"
+	"strconv"
 
+	rbgapi "github.com/bcfre/rbg-api/api/workloads/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/apis"
@@ -79,6 +81,48 @@ func (sr *StatusReconciler) PropagateMultiNodeStatus(
 
 	status.Components[component] = statusSpec
 	status.ObservedGeneration = lws.Generation
+}
+
+// PropagateRBGStatus propagates status from RBG for a specific component
+func (sr *StatusReconciler) PropagateRBGRoleStatus(
+	status *v1beta1.InferenceServiceStatus,
+	component v1beta1.ComponentType,
+	roleReady bool,
+	rbg *rbgapi.RoleBasedGroup,
+	url *apis.URL) {
+
+	statusSpec := sr.initializeComponentStatus(status, component)
+
+	statusSpec.LatestCreatedRevision = strconv.FormatInt(rbg.GetGeneration(), 10)
+
+	// Set URL if RBG role is ready
+	if roleReady {
+		statusSpec.URL = url
+	}
+
+	readyCondition := sr.getReadyConditionsMap()[component]
+
+	// Create condition based on RBG role status
+	var componentCondition *apis.Condition
+	if roleReady {
+		componentCondition = &apis.Condition{
+			Type:    readyCondition,
+			Status:  v1.ConditionTrue,
+			Reason:  "RBGRoleReady",
+			Message: "RBG role is ready",
+		}
+	} else {
+		componentCondition = &apis.Condition{
+			Type:    readyCondition,
+			Status:  v1.ConditionFalse,
+			Reason:  "RBGRoleNotReady",
+			Message: "RBG role is not ready",
+		}
+	}
+
+	sr.setCondition(status, readyCondition, componentCondition)
+	status.Components[component] = statusSpec
+	// Note: ObservedGeneration will be set from RBG resource metadata
 }
 
 // PropagateMultiNodeRayVLLMStatus propagates status from multiple deployments

@@ -399,3 +399,44 @@ func (d *Decoder) ValidateSpec() error {
 	// Add more validation logic as needed
 	return nil
 }
+
+// ============ ComponentConfigExtractor Interface Implementation ============
+
+// GetPodSpec implements ComponentConfigExtractor interface
+// Returns the main PodSpec for the Decoder component
+func (d *Decoder) GetPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	objectMeta, err := d.reconcileObjectMeta(isvc)
+	if err != nil {
+		return nil, err
+	}
+	return d.reconcilePodSpec(isvc, &objectMeta)
+}
+
+// GetWorkerPodSpec implements ComponentConfigExtractor interface
+// Returns the Worker PodSpec for MultiNode deployments
+func (d *Decoder) GetWorkerPodSpec(isvc *v1beta1.InferenceService) (*v1.PodSpec, error) {
+	objectMeta, err := d.reconcileObjectMeta(isvc)
+	if err != nil {
+		return nil, err
+	}
+	return d.reconcileWorkerPodSpec(isvc, &objectMeta)
+}
+
+// GetObjectMeta implements ComponentConfigExtractor interface
+// Returns the ObjectMeta (name, labels, annotations) for the Decoder component
+func (d *Decoder) GetObjectMeta(isvc *v1beta1.InferenceService) (metav1.ObjectMeta, error) {
+	return d.reconcileObjectMeta(isvc)
+}
+
+// GetComponentExtension implements ComponentConfigExtractor interface
+// Returns the component extension configuration
+func (d *Decoder) GetComponentExtension() *v1beta1.ComponentExtensionSpec {
+	if d.decoderSpec == nil {
+		return nil
+	}
+	return &d.decoderSpec.ComponentExtensionSpec
+}
+
+func (d *Decoder) GetWorkerSize() int {
+	return d.getWorkerSize()
+}

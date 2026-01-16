@@ -64,6 +64,8 @@ func createScaledObject(
 	maxReplicas := calculateMaxReplicas(componentExt, minReplicas)
 	triggers := getScaledObjectTriggers(componentMeta, inferenceServiceSpec)
 
+	scaleTargetRef := getScaleTargetRef(componentMeta)
+
 	return &kedav1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        utils.GetScaledObjectName(componentMeta.Name),
@@ -72,15 +74,35 @@ func createScaledObject(
 			Annotations: componentMeta.Annotations,
 		},
 		Spec: kedav1.ScaledObjectSpec{
-			ScaleTargetRef: &kedav1.ScaleTarget{
-				APIVersion: "apps/v1",
-				Kind:       "Deployment",
-				Name:       componentMeta.Name,
-			},
+			ScaleTargetRef:  &scaleTargetRef,
 			MinReplicaCount: &minReplicas,
 			MaxReplicaCount: &maxReplicas,
 			Triggers:        triggers,
 		},
+	}
+}
+
+// getScaleTargetRef 根据部署模式返回HPA的ScaleTargetRef
+// 如果是RoleBasedGroup模式，返回RoleBasedGroupScalingAdapter
+// 否则返回默认的Deployment
+func getScaleTargetRef(componentMeta metav1.ObjectMeta) kedav1.ScaleTarget {
+	// 检查是否为RoleBasedGroup部署模式
+	if deploymentMode, exists := componentMeta.Annotations[constants.DeploymentMode]; exists {
+		if deploymentMode == string(constants.RoleBasedGroup) {
+			// RoleBasedGroup模式使用RoleBasedGroupScalingAdapter
+			return kedav1.ScaleTarget{
+				APIVersion: "workloads.x-k8s.io/v1alpha1",
+				Kind:       "RoleBasedGroupScalingAdapter",
+				Name:       componentMeta.Name,
+			}
+		}
+	}
+
+	// 默认使用Deployment
+	return kedav1.ScaleTarget{
+		APIVersion: "apps/v1",
+		Kind:       "Deployment",
+		Name:       componentMeta.Name,
 	}
 }
 

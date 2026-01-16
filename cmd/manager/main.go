@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	rbg "github.com/bcfre/rbg-api/api/workloads/v1alpha1"
 	kedav1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	ray "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	zaplog "go.uber.org/zap"
@@ -220,6 +221,7 @@ func main() {
 		{ray.SchemeGroupVersion, constants.RayClusterKind, ray.AddToScheme},
 		{knservingv1.SchemeGroupVersion, constants.KnativeServiceKind, knservingv1.AddToScheme},
 		{lws.SchemeGroupVersion, constants.LWSKind, lws.AddToScheme},
+		{rbg.SchemeGroupVersion, constants.RBGKind, rbg.AddToScheme},
 		{volcano.SchemeGroupVersion, constants.VolcanoQueueKind, volcano.AddToScheme},
 		{volcanobatch.SchemeGroupVersion, constants.VolcanoJobKind, volcanobatch.AddToScheme},
 		{kedav1.SchemeGroupVersion, constants.KEDAScaledObjectKind, kedav1.AddToScheme},
